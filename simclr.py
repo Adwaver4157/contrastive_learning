@@ -7,12 +7,20 @@ import torchvision.models as models
 
 from torch import Tensor
 
+class Identity(nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        return x
 
 class SimCLR_ResNet(nn.Module):
     def __init__(self, latent_dim, output_dim=256):
         super().__init__()
         self.feature_extractor = models.resnet50()
         self.latent_dim = self.feature_extractor.fc.in_features
+        self.feature_extractor.fc = Identity()
+        self.hidden_dim = latent_dim
         self.output_dim = output_dim
         self.prjection_head = nn.Sequential(
                                 nn.Linear(self.latent_dim, self.hidden_dim),
@@ -20,30 +28,30 @@ class SimCLR_ResNet(nn.Module):
                                 nn.Linear(self.hidden_dim, self.output_dim)
                               ) 
     
-    def _forward_impl(self, x: Tensor) -> Tensor:
+    def forward(self, x: Tensor) -> Tensor:
         # See note [TorchScript super()]
-        x = self.feature_extractor.conv1(x)
-        x = self.feature_extractor.bn1(x)
-        x = self.feature_extractor.relu(x)
-        x = self.feature_extractor.maxpool(x)
-
-        x = self.feature_extractor.layer1(x)
-        x = self.feature_extractor.layer2(x)
-        x = self.feature_extractor.layer3(x)
-        x = self.feature_extractor.layer4(x)
-
-        x = self.feature_extractor.avgpool(x)
-        x = torch.flatten(x, 1)
+        x = self.feature_extractor(x)
         x = self.prjection_head(x)
 
         return x
 
-    def forward(self, x):
-        return self._forward_impl(x)
-
 class SimCLR():
-    def __init__(self):
-        
+    def __init__(self, model):
+        self.model = model
+    
+    def info_nce_loss(self, x):
+        y = self.model(x)
+    
+    def train():
+        raise NotImplementedError()
+
+color_jitter = transforms.ColorJitter(0.8 * s, 0.8 * s, 0.8 * s, 0.2 * s)
+        data_transforms = transforms.Compose([transforms.RandomResizedCrop(size=size),
+                                              transforms.RandomHorizontalFlip(),
+                                              transforms.RandomApply([color_jitter], p=0.8),
+                                              transforms.RandomGrayscale(p=0.2),
+                                              GaussianBlur(kernel_size=int(0.1 * size)),
+                                              transforms.ToTensor()])
 
 if __name__=='__main__':
     net = SimCLR()
