@@ -109,7 +109,7 @@ RUN apt-get update \
 
 # utils ----------------
 RUN apt-get update && apt-get install -y \
-    vim
+    vim wandb tqdm umap-learn
 
 WORKDIR /root/workspace/
 RUN source ~/.bash_profile && source ~/.bashrc

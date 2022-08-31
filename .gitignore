@@ -1,1 +1,6 @@
 dataset/
+data/
+model/
+wandb/
+__pycache__/
+*.png

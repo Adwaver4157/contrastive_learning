@@ -13,3 +13,11 @@ docker run -it --rm --name takanami_torch \
 ```
 
 ### Run train.py
+```bash
+python train.py --fp16-precision
+```
+
+### Evaluate learned representation by UMAP
+```bash
+python eval.py
+```

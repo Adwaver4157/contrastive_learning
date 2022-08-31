@@ -1,14 +1,11 @@
 import torch
-from dataset import ContrastiveLearningDataset
 from simclr import SimCLR, SimCLR_ResNet
-from utils import accuracy, save_checkpoint
-
-
-from torch.cuda.amp import GradScaler, autocast
-
+from dataset import ContrastiveLearningDataset
 import os
 import argparse
-import wandb
+import matplotlib.pyplot as plt
+from tqdm import tqdm
+import numpy as np
 
 
 parser = argparse.ArgumentParser(description='PyTorch SimCLR')
@@ -18,7 +15,7 @@ parser.add_argument('-dataset-name', default='stl10',
                     help='dataset name', choices=['stl10', 'cifar10'])
 parser.add_argument('-j', '--workers', default=12, type=int, metavar='N',
                     help='number of data loading workers (default: 32)')
-parser.add_argument('--epochs', default=1000, type=int, metavar='N',
+parser.add_argument('--epochs', default=200, type=int, metavar='N',
                     help='number of total epochs to run')
 parser.add_argument('-b', '--batch-size', default=256, type=int,
                     metavar='N',
@@ -49,10 +46,6 @@ parser.add_argument('--gpu-index', default=0, type=int, help='Gpu index.')
 
 def main():
     args = parser.parse_args()
-
-    wandb.init(
-        project='contrastive_learning_for_r3m'
-    )
     # train on the GPU or on the CPU, if a GPU is not available
     device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
     args.device = device
@@ -63,61 +56,31 @@ def main():
     training_dataset = dataset.get_dataset(name='cifar10', n_views=2)
 
     # define training and validation data loaders
-    train_dataloader = torch.utils.data.DataLoader(training_dataset, batch_size=args.batch_size, shuffle=True, drop_last=True)
+    dataloader = torch.utils.data.DataLoader(training_dataset, batch_size=args.batch_size, shuffle=True, drop_last=True)
 
-    # get the model using our helper function
-    model = SimCLR_ResNet()
-
-    # move model to the right device
-    model.to(device)
-
-    simclr = SimCLR(model=model, args=args)
-
-    # cnstruct an optimizer
-    optimizer = torch.optim.Adam(model.parameters(), args.lr, weight_decay=args.weight_decay)
-    # and a learning rate scheduler
-    lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=len(train_dataloader), eta_min=0,
-                                                           last_epoch=-1)
-    criterion = torch.nn.CrossEntropyLoss().to(device)
-
-    scaler = GradScaler(enabled=args.fp16_precision)
-
-
-    n_iter = 0
-
-    for epoch_counter in range(args.epochs):
-        for images, _ in train_dataloader:
-            images = torch.cat(images, dim=0)
-            images = images.to(device)
-            with autocast(enabled=args.fp16_precision):
-                features = simclr.model(images)
-                logits, labels = simclr.info_nce_loss(features)
-                loss = criterion(logits, labels)
-            optimizer.zero_grad()
-            scaler.scale(loss).backward()
-            scaler.step(optimizer)
-            scaler.update()
-            if n_iter % args.log_every_n_steps == 0:
-                top1, top5 = accuracy(logits, labels, topk=(1, 5))
-                wandb.log({'iteration': n_iter,
-                           'loss': loss,
-                           'acc/top1': top1[0],
-                           'acc/top5': top5[0],
-                           'learning_rate': lr_scheduler.get_lr()[0]})
-            n_iter += 1
-        # warmup for the first 10 epochs
-        if epoch_counter >= 10:
-            lr_scheduler.step()
-        wandb.log({'epoch': epoch_counter})
-        # save model checkpoints
-        checkpoint_name = 'checkpoint_{:04d}.pt'.format(epoch_counter)
-        save_checkpoint({
-            'epoch': args.epochs,
-            'state_dict': simclr.model.state_dict(),
-            'optimizer': optimizer.state_dict(),
-        }, is_best=False, filename=os.path.join(os.getcwd(), 'model', checkpoint_name))
-        wandb.save(os.path.join(os.getcwd(), 'model', checkpoint_name))
+    model_path = os.path.join(os.getcwd(), 'model', 'checkpoint_0000.pt')
+    model = SimCLR_ResNet().to(device)
+    # simclr = SimCLR(model=model, args=args)
+    model.load_state_dict(torch.load(model_path)['state_dict'])
+    model.eval()
+    x = np.array([])
+    index = 0
+    for images, _ in tqdm(dataloader):
+        images = torch.cat(images, dim=0)
+        images = images.to(device)
+        features = model.feature_extract(images).to('cpu').detach().numpy().copy()
+        if index == 0:
+            x = features
+        else:
+            x = np.append(x, features, axis=0)
+        index += 1
     
+    import umap
+
+    umap = umap.UMAP(n_components=2, random_state=0)
+    X_reduced_umap = umap.fit_transform(x)
+    plt.scatter(X_reduced_umap[:, 0], X_reduced_umap[:, 1], cmap='jet', alpha=0.5)
+    plt.savefig('features_map.png')
 
 if __name__=='__main__':
     main()
